@@ -475,63 +475,9 @@ def resolve_media_url(url: str, requested_resolution: Optional[str] = "720") -> 
     # ============================================================
     elif ('classplusapp' in resolved_url or "testbook.com" in resolved_url or 
           "classplusapp.com/drm" in resolved_url or "media-cdn.classplusapp.com/drm" in resolved_url or 
-          "akamai-cdn.classplusapp.com" in resolved_url or "hdnts=" in resolved_url or "hdntl=" in resolved_url):
+          "akamai-cdn.classplusapp.com" in resolved_url):
         
-        # Determine L1 / L2 type
-        is_l1 = ('key=' in resolved_url and 'userIds=' in resolved_url)
-        is_l2 = ('hdnts=' in resolved_url or 'hdntl=' in resolved_url) and not is_l1
-
-        if is_l1:
-            logger.info("✅ L1 link detected (key + userIds) — preserving all parameters")
-            media_type = "ClassPlus Akamai (L1)"
-        elif is_l2:
-            logger.info("✅ L2 link detected (hdnts/hdntl token)")
-            media_type = "ClassPlus Akamai (L2)"
-        else:
-            logger.info("ℹ️ Standard ClassPlus / Akamai link")
-            media_type = "ClassPlus / Akamai"
-
-        # Standard headers for ClassPlus & Akamai CDN EdgeAuth
-        extra_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-        extra_headers['Referer'] = 'https://web.classplusapp.com/'
-        extra_headers['Origin'] = 'https://web.classplusapp.com'
-        extra_headers['Accept'] = '*/*'
-        extra_headers['Accept-Encoding'] = 'gzip, deflate, br'
-        extra_headers['Accept-Language'] = 'en-US,en;q=0.9'
-        extra_headers['Sec-Fetch-Mode'] = 'cors'
-        extra_headers['Sec-Fetch-Site'] = 'cross-site'
-        extra_headers['Sec-Fetch-Dest'] = 'empty'
-        extra_headers['x-cdn-tag'] = 'empty'
-
-        # Check if URL is ALREADY a direct Akamai/ClassPlus HLS stream (.m3u8)
-        if ".m3u8" in resolved_url:
-            logger.info("🎯 Direct Akamai / ClassPlus HLS stream detected, checking multi-variant resolution...")
-            try:
-                resp = requests.get(resolved_url, headers=extra_headers, timeout=5)
-                if resp.status_code == 200 and "#EXT-X-STREAM-INF" in resp.text:
-                    variant_url = parse_m3u8_variant(resolved_url, resp.text, requested_resolution or "720")
-                    if variant_url:
-                        resolved_url = variant_url
-                        logger.info(f"✅ Selected ClassPlus variant stream URL: {resolved_url[:80]}...")
-            except Exception as e:
-                logger.debug(f"Direct ClassPlus m3u8 pre-resolve skipped: {e}")
-
-            return {
-                "url": resolved_url,
-                "keys_string": keys_string,
-                "extra_headers": extra_headers,
-                "media_type": media_type
-            }
-
-        # Check if URL is ALREADY a direct Akamai/ClassPlus DASH stream (.mpd)
-        if ".mpd" in resolved_url or "/drm/" in resolved_url:
-            logger.info("🎯 Direct Akamai / ClassPlus MPD DASH stream detected!")
-            return {
-                "url": resolved_url,
-                "keys_string": keys_string,
-                "extra_headers": extra_headers,
-                "media_type": "ClassPlus DRM (MPD)"
-            }
+        media_type = "ClassPlus / Akamai"
 
         # ---------- EXTRACT contentHashId / contentHashIdl ----------
         content_id = None
@@ -561,6 +507,19 @@ def resolve_media_url(url: str, requested_resolution: Optional[str] = "720") -> 
 
         logger.info(f"🔑 ClassPlus content_id: {content_id}")
         logger.info(f"🔑 ClassPlus vidkey: {vidkey}")
+
+        # ---------- CHECK IF IT'S L1 (has key + userIds) ----------
+        is_l1 = 'key=' in resolved_url and 'userIds=' in resolved_url
+        is_l2 = 'hdnts=' in resolved_url and not is_l1
+
+        if is_l1:
+            logger.info("✅ L1 link detected (key + userIds) — preserving all parameters")
+            media_type = "ClassPlus Akamai (L1)"
+        elif is_l2:
+            logger.info("✅ L2 link detected (hdnts only)")
+            media_type = "ClassPlus Akamai (L2)"
+        else:
+            logger.info("ℹ️ Standard / unknown ClassPlus link format")
 
         # ---------- BUILD HEADERS ----------
         headers = {
@@ -605,25 +564,43 @@ def resolve_media_url(url: str, requested_resolution: Optional[str] = "720") -> 
 
                 logger.info(f"📦 ClassPlus API Response: {res}")
 
-                if isinstance(res, dict) and res.get("url"):
-                    resolved_url = res["url"]
-                    logger.info(f"✅ ClassPlus API Success - URL: {resolved_url[:50]}...")
-                elif isinstance(res, dict) and 'drmUrls' in res and 'manifestUrl' in res['drmUrls']:
-                    mpd_url = res['drmUrls']['manifestUrl']
-                    mpd, keys = get_mps_and_keys(mpd_url)
-                    resolved_url = mpd if (isinstance(mpd, str) and not mpd.startswith('<?xml') and '<MPD' not in mpd) else mpd_url
-                    keys_string = " ".join([f"--key {key}" for key in keys])
-                    media_type = "ClassPlus DRM (MPD)"
+                # Check if it's a DRM URL
+                if ("testbook.com" in base_url or "classplusapp.com/drm" in base_url or 
+                    "media-cdn.classplusapp.com/drm" in base_url or '/drm/' in base_url or
+                    "akamai-cdn.classplusapp.com" in base_url):
+                    if 'drmUrls' in res and 'manifestUrl' in res['drmUrls']:
+                        mpd_url = res['drmUrls']['manifestUrl']
+                        mpd, keys = get_mps_and_keys(mpd_url)
+                        resolved_url = mpd if (isinstance(mpd, str) and not mpd.startswith('<?xml') and '<MPD' not in mpd) else mpd_url
+                        keys_string = " ".join([f"--key {key}" for key in keys])
+                        media_type = "ClassPlus DRM (MPD)"
+                    else:
+                        resolved_url = res.get("url", base_url)
+                        keys_string = ""
                 else:
-                    logger.warning(f"⚠️ ClassPlus API returned no URL: {res}")
-                    resolved_url = base_url
+                    resolved_url = res.get("url", base_url)
+                    keys_string = ""
+
+                logger.info(f"✅ ClassPlus API Success - contentId: {api_content_id[:30]}...")
 
             except Exception as e:
                 logger.warning(f"⚠️ ClassPlus API Error: {e}")
+                # Keep original URL if API fails — L1 and L2 both preserved
                 resolved_url = base_url
+                keys_string = ""
         else:
             logger.info("⚠️ No contentId or vidkey found, using original URL")
             resolved_url = base_url
+            keys_string = ""
+
+    # Extra headers for ClassPlus & Akamai CDNs (mimics browser extension perfectly)
+    if any(k in resolved_url.lower() for k in ["classplusapp", "akamai", "media-cdn", "testbook"]):
+        extra_headers['Referer'] = 'https://web.classplusapp.com/'
+        extra_headers['Origin'] = 'https://web.classplusapp.com'
+        extra_headers['x-cdn-tag'] = 'empty'
+        extra_headers['Sec-Fetch-Site'] = 'same-site'
+        extra_headers['Sec-Fetch-Mode'] = 'cors'
+        extra_headers['Sec-Fetch-Dest'] = 'empty'
 
     return {
         "url": resolved_url,
@@ -744,51 +721,16 @@ def sync_download_worker(task_id: str):
         'quiet': True,
         'no_warnings': True,
         'no_color': True,
-        'retries': 50,
-        'fragment_retries': 50,
+        'retries': 30,
+        'fragment_retries': 30,
         'noplaylist': True,
         'nocheckcertificate': True,
         'allow_unplayable_formats': True,
-        'concurrent_fragment_downloads': 32,  # 🚀 MAX SPEED: 32 parallel fragment downloads
-        'buffersize': 64 * 1024 * 1024,       # 64MB RAM buffer for zero-lag disk I/O
-        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunk pipeline
-        'socket_timeout': 15,
+        'concurrent_fragment_downloads': 16,  # 🚀 16 concurrent fragments for stable 5-8 MB/s
+        'buffersize': 16 * 1024 * 1024,       # 16MB buffer
+        'socket_timeout': 20,
         'http_headers': browser_headers,       # Full browser identity for every chunk
     }
-
-    # ClassPlus / Akamai CDN Turbo Download Optimizations (MAX SPEED)
-    is_classplus_stream = (
-        any(k in target_url.lower() for k in ["classplusapp", "akamai", "media-cdn", "testbook", "cpvod", "hdnts=", "hdntl="]) or
-        "ClassPlus" in task.get("media_type", "") or
-        "Akamai" in task.get("media_type", "")
-    )
-    if is_classplus_stream:
-        ydl_opts['concurrent_fragment_downloads'] = 32  # 🚀 32 parallel chunk streams for ClassPlus
-        ydl_opts['buffersize'] = 64 * 1024 * 1024       # 64MB non-blocking buffer
-        ydl_opts['http_chunk_size'] = 10 * 1024 * 1024  # 10MB HTTP chunk size
-        ydl_opts['socket_timeout'] = 20
-        ydl_opts['retries'] = 25
-        ydl_opts['fragment_retries'] = 25
-        ydl_opts['hls_use_mpegts'] = True
-        ydl_opts['live_from_start'] = True
-
-        # Akamai CDN token preservation on video fragments, variant playlists & AES keys
-        tok_akamai = re.search(r'[?&]((?:hdnt[sl]|key|token)=[^&]+)', target_url)
-        if tok_akamai:
-            tok_str = tok_akamai.group(1)
-            ydl_opts.setdefault('extractor_args', {})['generic'] = {
-                'fragment_query': [tok_str],
-                'variant_query': [tok_str],
-                'key_query': [tok_str]
-            }
-        else:
-            parsed_u = urlparse(target_url)
-            if parsed_u.query:
-                ydl_opts.setdefault('extractor_args', {})['generic'] = {
-                    'fragment_query': [parsed_u.query],
-                    'variant_query': [parsed_u.query],
-                    'key_query': [parsed_u.query]
-                }
 
     # ClassX Google Edge Cache stream optimizations
     is_classx_stream = (
@@ -797,8 +739,8 @@ def sync_download_worker(task_id: str):
         task.get("media_type") == "ClassX Stream"
     )
     if is_classx_stream:
-        ydl_opts['concurrent_fragment_downloads'] = 32  # 🚀 32 parallel streams
-        ydl_opts['buffersize'] = 64 * 1024 * 1024
+        ydl_opts['concurrent_fragment_downloads'] = 16
+        ydl_opts['buffersize'] = 32 * 1024 * 1024
         ydl_opts['http_chunk_size'] = 10 * 1024 * 1024
         tok_m = re.search(r'[?&](edge-cache-token=[^&]+)', target_url)
         if tok_m:

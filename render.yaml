@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: omnistream-video-downloader
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000

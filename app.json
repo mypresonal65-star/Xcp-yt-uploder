@@ -1,0 +1,19 @@
+{
+  "name": "OmniStream Web Video Downloader",
+  "description": "Universal web video downloader with ClassPlus and Akamai DRM support built with FastAPI & yt-dlp",
+  "keywords": ["fastapi", "yt-dlp", "video-downloader", "classplus", "drm"],
+  "stack": "container",
+  "env": {
+    "CP_TOKEN": {
+      "description": "ClassPlus access token for signed URL generation (optional, has default)",
+      "required": false,
+      "value": "eyJjb3Vyc2VJZCI6IjQ1NjY4NyIsInR1dG9ySWQiOm51bGwsIm9yZ0lkIjo0ODA2MTksImNhdGVnb3J5SWQiOm51bGx9r"
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}

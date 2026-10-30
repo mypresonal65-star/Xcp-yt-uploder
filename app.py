@@ -479,6 +479,19 @@ def resolve_media_url(url: str, requested_resolution: Optional[str] = "720") -> 
         
         media_type = "ClassPlus / Akamai"
 
+        # Check if URL is ALREADY a direct Akamai/ClassPlus HLS stream (.m3u8)
+        if ".m3u8" in resolved_url:
+            logger.info("🎯 Direct Akamai / ClassPlus HLS stream detected, checking multi-variant resolution...")
+            try:
+                resp = requests.get(resolved_url, headers=extra_headers, timeout=5)
+                if resp.status_code == 200 and "#EXT-X-STREAM-INF" in resp.text:
+                    variant_url = parse_m3u8_variant(resolved_url, resp.text, requested_resolution or "720")
+                    if variant_url:
+                        resolved_url = variant_url
+                        logger.info(f"✅ Selected ClassPlus variant stream URL: {resolved_url[:80]}...")
+            except Exception as e:
+                logger.debug(f"Direct ClassPlus m3u8 pre-resolve skipped: {e}")
+
         # ---------- EXTRACT contentHashId / contentHashIdl ----------
         content_id = None
         hash_patterns = [
@@ -601,6 +614,9 @@ def resolve_media_url(url: str, requested_resolution: Optional[str] = "720") -> 
         extra_headers['Sec-Fetch-Site'] = 'same-site'
         extra_headers['Sec-Fetch-Mode'] = 'cors'
         extra_headers['Sec-Fetch-Dest'] = 'empty'
+        hdnts_match = re.search(r'(hdnts=[^&]+)', resolved_url)
+        if hdnts_match:
+            extra_headers['Cookie'] = hdnts_match.group(1)
 
     return {
         "url": resolved_url,
@@ -721,16 +737,40 @@ def sync_download_worker(task_id: str):
         'quiet': True,
         'no_warnings': True,
         'no_color': True,
-        'retries': 30,
-        'fragment_retries': 30,
+        'retries': 50,
+        'fragment_retries': 50,
         'noplaylist': True,
         'nocheckcertificate': True,
         'allow_unplayable_formats': True,
-        'concurrent_fragment_downloads': 16,  # 🚀 16 concurrent fragments for stable 5-8 MB/s
-        'buffersize': 16 * 1024 * 1024,       # 16MB buffer
-        'socket_timeout': 20,
+        'concurrent_fragment_downloads': 32,  # 🚀 MAX SPEED: 32 parallel fragment downloads
+        'buffersize': 64 * 1024 * 1024,       # 64MB RAM buffer for zero-lag disk I/O
+        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunk pipeline
+        'socket_timeout': 15,
         'http_headers': browser_headers,       # Full browser identity for every chunk
     }
+
+    # ClassPlus / Akamai CDN Turbo Download Optimizations (MAX SPEED)
+    is_classplus_stream = (
+        any(k in target_url.lower() for k in ["classplusapp", "akamai", "media-cdn", "testbook", "cpvod", "hdnts=", "hdntl="]) or
+        "ClassPlus" in task.get("media_type", "") or
+        "Akamai" in task.get("media_type", "")
+    )
+    if is_classplus_stream:
+        ydl_opts['concurrent_fragment_downloads'] = 32  # 🚀 32 parallel chunk streams for ClassPlus
+        ydl_opts['buffersize'] = 64 * 1024 * 1024       # 64MB non-blocking buffer
+        ydl_opts['http_chunk_size'] = 10 * 1024 * 1024  # 10MB HTTP chunk size
+        ydl_opts['socket_timeout'] = 15
+        ydl_opts['retries'] = 50
+        ydl_opts['fragment_retries'] = 50
+
+        # Akamai CDN token preservation on all video fragments
+        tok_akamai = re.search(r'[?&]((?:hdnts|hdntl)=[^&]+)', target_url)
+        if tok_akamai:
+            tok_str = tok_akamai.group(1)
+            ydl_opts.setdefault('extractor_args', {})['generic'] = {
+                'fragment_query': [tok_str],
+                'variant_query': [tok_str]
+            }
 
     # ClassX Google Edge Cache stream optimizations
     is_classx_stream = (
@@ -739,8 +779,8 @@ def sync_download_worker(task_id: str):
         task.get("media_type") == "ClassX Stream"
     )
     if is_classx_stream:
-        ydl_opts['concurrent_fragment_downloads'] = 16
-        ydl_opts['buffersize'] = 32 * 1024 * 1024
+        ydl_opts['concurrent_fragment_downloads'] = 32  # 🚀 32 parallel streams
+        ydl_opts['buffersize'] = 64 * 1024 * 1024
         ydl_opts['http_chunk_size'] = 10 * 1024 * 1024
         tok_m = re.search(r'[?&](edge-cache-token=[^&]+)', target_url)
         if tok_m:

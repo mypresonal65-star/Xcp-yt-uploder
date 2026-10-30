@@ -62,7 +62,7 @@ DEFAULT_TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
 tasks_lock = asyncio.Lock()
 tasks_db: Dict[str, Dict[str, Any]] = {}
 download_queue: asyncio.Queue = asyncio.Queue()
-MAX_CONCURRENT_WORKERS = 2
+MAX_CONCURRENT_WORKERS = int(os.environ.get("MAX_CONCURRENT_WORKERS", 5))
 thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_WORKERS)
 
 async def auto_clean_downloads_loop():
@@ -146,11 +146,15 @@ async def auto_clean_downloads_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    worker_task = asyncio.create_task(queue_worker_loop())
+    worker_tasks = [
+        asyncio.create_task(queue_worker_loop(f"worker-{i+1}"))
+        for i in range(MAX_CONCURRENT_WORKERS)
+    ]
     cleaner_task = asyncio.create_task(auto_clean_downloads_loop())
-    logger.info("Universal Web Video Downloader worker & 1-hour auto-cleanup loop initialized.")
+    logger.info(f"Universal Web Video Downloader with {MAX_CONCURRENT_WORKERS} concurrent workers & 1-hour auto-cleanup loop initialized.")
     yield
-    worker_task.cancel()
+    for wt in worker_tasks:
+        wt.cancel()
     cleaner_task.cancel()
 
 app = FastAPI(
@@ -909,7 +913,7 @@ def sync_download_worker(task_id: str):
         task["finished_at"] = time.time()
 
 
-async def queue_worker_loop():
+async def queue_worker_loop(worker_name: str = "worker"):
     """Background task to pull items from the download queue."""
     loop = asyncio.get_running_loop()
     while True:
@@ -917,12 +921,13 @@ async def queue_worker_loop():
             task_id = await download_queue.get()
             task = tasks_db.get(task_id)
             if task and not task.get("cancelled", False):
+                logger.info(f"[{worker_name}] Starting download task: {task_id}")
                 await loop.run_in_executor(thread_pool, sync_download_worker, task_id)
             download_queue.task_done()
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Queue worker exception: {e}")
+            logger.error(f"[{worker_name}] Queue worker exception: {e}")
             await asyncio.sleep(1)
 
 

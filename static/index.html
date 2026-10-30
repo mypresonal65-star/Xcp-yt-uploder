@@ -510,8 +510,8 @@
             </svg>
           </div>
           <div>
-            <h3>Telegram Uploader Setup</h3>
-            <p class="modal-subtitle">Upload up to 2GB videos using MTProto (Bot Token + API ID/Hash)</p>
+            <h3>Telegram Channel Connect</h3>
+            <p class="modal-subtitle">Instant channel upload (API ID & Hash pre-configured in code)</p>
           </div>
         </div>
         <button class="btn-modal-close" onclick="closeTgModal()">&times;</button>
@@ -520,52 +520,62 @@
       <div class="modal-body">
         <div class="tg-connection-status" id="modalTgStatusCard">
           <div class="status-indicator-dot" id="modalTgDot"></div>
-          <span id="modalTgStatusMsg">No Bot Token saved yet</span>
+          <span id="modalTgStatusMsg">Ready — Enter Channel ID below and press Enter</span>
+        </div>
+
+        <div style="background: rgba(0, 136, 204, 0.08); border: 1px solid rgba(0, 136, 204, 0.25); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.82rem; color: #b0c4de;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-weight: 600; color: #58a6ff;">⚡ Telegram Credentials:</span>
+            <span style="background: #238636; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 700;">PRE-CONFIGURED</span>
+          </div>
+          <div style="font-size: 0.76rem; opacity: 0.9;">
+            API ID (<code>37748306</code>) & API Hash code me already set hain. Aapko sirf apna <strong>Channel ID</strong> dalke Enter dabana hai!
+          </div>
         </div>
 
         <form onsubmit="saveTelegramSettings(event)">
           <div class="modal-form-group">
-            <label class="modal-label" for="tgModalBotToken">
-              <span>Bot Token</span>
-              <a href="https://t.me/BotFather" target="_blank" class="modal-link-hint">Get from @BotFather</a>
-            </label>
-            <input type="password" id="tgModalBotToken" class="modal-input" placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" autocomplete="off" required>
-          </div>
-
-          <div class="modal-grid-2">
-            <div class="modal-form-group">
-              <label class="modal-label" for="tgModalApiId">
-                <span>API ID</span>
-                <a href="https://my.telegram.org" target="_blank" class="modal-link-hint">my.telegram.org</a>
-              </label>
-              <input type="text" id="tgModalApiId" class="modal-input" placeholder="e.g. 21345678" autocomplete="off" required>
-            </div>
-            <div class="modal-form-group">
-              <label class="modal-label" for="tgModalApiHash">
-                <span>API Hash</span>
-              </label>
-              <input type="password" id="tgModalApiHash" class="modal-input" placeholder="e.g. 9f8e7d6c5b4a3..." autocomplete="off" required>
-            </div>
-          </div>
-
-          <div class="modal-form-group">
             <label class="modal-label" for="tgModalDefaultChat">
-              <span>Default Channel / Chat ID</span>
-              <span class="modal-hint-inline">(@channelusername or -100...)</span>
+              <span>Channel / Chat ID (Direct Connect)</span>
+              <span class="modal-hint-inline">(@channelusername ya -100...)</span>
             </label>
-            <input type="text" id="tgModalDefaultChat" class="modal-input" placeholder="e.g. @MyChannel or -1001234567890" autocomplete="off">
-            <span class="field-info">💡 Tip: Make sure your bot is added as an <strong>Administrator</strong> with "Post Messages" permission in your channel!</span>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="tgModalDefaultChat" class="modal-input" placeholder="e.g. -1001234567890 ya @MyChannel" autocomplete="off" required style="flex: 1; font-weight: 600; font-size: 0.95rem;">
+              <button type="submit" class="btn-tg-save" id="btnSaveTg" style="white-space: nowrap; padding: 0 16px;">
+                Connect
+              </button>
+            </div>
+            <span class="field-info" style="margin-top: 6px; display: block; font-size: 0.78rem;">💡 Tip: Channel me apne bot ko <strong>Administrator</strong> (Post Messages permission) ke sath zaroor add karein!</span>
           </div>
 
-          <div class="modal-actions-row">
-            <button type="button" class="btn-secondary" onclick="closeTgModal()">Cancel</button>
-            <button type="submit" class="btn-tg-save" id="btnSaveTg">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              Test & Save Credentials
-            </button>
-          </div>
+          <!-- Advanced / Optional Bot Token override -->
+          <details style="margin-top: 14px; font-size: 0.85rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+            <summary style="cursor: pointer; color: #8b949e; user-select: none;">⚙️ Advanced: Custom Bot Token / Credentials (Optional)</summary>
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+              <div class="modal-form-group" style="margin-bottom: 0;">
+                <label class="modal-label" for="tgModalBotToken">
+                  <span>Custom Bot Token (Optional override)</span>
+                  <a href="https://t.me/BotFather" target="_blank" class="modal-link-hint">@BotFather</a>
+                </label>
+                <input type="password" id="tgModalBotToken" class="modal-input" placeholder="Optional: Leave blank to use server bot" autocomplete="off">
+              </div>
+
+              <div class="modal-grid-2">
+                <div class="modal-form-group" style="margin-bottom: 0;">
+                  <label class="modal-label" for="tgModalApiId">
+                    <span>Custom API ID (Optional)</span>
+                  </label>
+                  <input type="text" id="tgModalApiId" class="modal-input" placeholder="Pre-configured (37748306)" autocomplete="off">
+                </div>
+                <div class="modal-form-group" style="margin-bottom: 0;">
+                  <label class="modal-label" for="tgModalApiHash">
+                    <span>Custom API Hash (Optional)</span>
+                  </label>
+                  <input type="password" id="tgModalApiHash" class="modal-input" placeholder="Pre-configured (745b95...)" autocomplete="off">
+                </div>
+              </div>
+            </div>
+          </details>
         </form>
       </div>
     </div>

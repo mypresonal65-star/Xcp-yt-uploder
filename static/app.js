@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchQueue();
   fetchStats();
   checkYouTubeStatus();
-  checkTelegramStatus();
+  initServerTgConfig();
   startPolling();
 });
 
@@ -148,13 +148,51 @@ function toggleYtPrivacy(mode) {
 }
 
 // --- Telegram Status & Settings Management ---
+let serverTgConfig = {
+  api_id_configured: true,
+  api_hash_configured: true,
+  bot_token_configured: true,
+  default_chat_id: '',
+  pyrogram_available: true
+};
+
+async function initServerTgConfig() {
+  try {
+    const res = await fetch('/api/telegram/config');
+    if (res.ok) {
+      serverTgConfig = await res.json();
+      if (serverTgConfig.default_api_id && !localStorage.getItem('omni_tg_api_id')) {
+        localStorage.setItem('omni_tg_api_id', serverTgConfig.default_api_id);
+      }
+      if (serverTgConfig.default_api_hash && !localStorage.getItem('omni_tg_api_hash')) {
+        localStorage.setItem('omni_tg_api_hash', serverTgConfig.default_api_hash);
+      }
+      if (serverTgConfig.default_bot_token && !localStorage.getItem('omni_tg_bot_token')) {
+        localStorage.setItem('omni_tg_bot_token', serverTgConfig.default_bot_token);
+      }
+      if (serverTgConfig.default_chat_id && !localStorage.getItem('omni_tg_default_chat')) {
+        localStorage.setItem('omni_tg_default_chat', serverTgConfig.default_chat_id);
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch server TG config:', e);
+  }
+  checkTelegramStatus();
+}
+
 function getTelegramConfig() {
+  const localChat = localStorage.getItem('omni_tg_default_chat') || '';
+  const localBotToken = localStorage.getItem('omni_tg_bot_token') || (serverTgConfig.default_bot_token || '');
+  const localApiId = localStorage.getItem('omni_tg_api_id') || (serverTgConfig.default_api_id || '');
+  const localApiHash = localStorage.getItem('omni_tg_api_hash') || (serverTgConfig.default_api_hash || '');
+  const botUsername = localStorage.getItem('omni_tg_bot_username') || '';
+
   return {
-    bot_token: localStorage.getItem('omni_tg_bot_token') || '',
-    api_id: localStorage.getItem('omni_tg_api_id') || '',
-    api_hash: localStorage.getItem('omni_tg_api_hash') || '',
-    default_chat: localStorage.getItem('omni_tg_default_chat') || '',
-    bot_username: localStorage.getItem('omni_tg_bot_username') || ''
+    bot_token: localBotToken,
+    api_id: localApiId,
+    api_hash: localApiHash,
+    default_chat: localChat || serverTgConfig.default_chat_id || '',
+    bot_username: botUsername
   };
 }
 
@@ -167,23 +205,30 @@ function checkTelegramStatus() {
   const modalDot = document.getElementById('modalTgDot');
   const modalMsg = document.getElementById('modalTgStatusMsg');
 
-  const isConfigured = Boolean(cfg.bot_token && cfg.api_id && cfg.api_hash);
+  const hasChat = Boolean(cfg.default_chat);
 
-  if (isConfigured) {
-    const displayBot = cfg.bot_username ? `@${cfg.bot_username}` : 'TG Bot Ready';
+  if (hasChat) {
+    const displayChat = cfg.default_chat;
     if (headerBtn) headerBtn.classList.add('connected');
-    if (headerText) headerText.textContent = displayBot;
-    if (singleBadge) { singleBadge.textContent = '● ' + displayBot; singleBadge.className = 'tg-status-tag active'; }
-    if (batchBadge) { batchBadge.textContent = '● ' + displayBot; batchBadge.className = 'tg-status-tag active'; }
+    if (headerText) headerText.textContent = `TG: ${displayChat}`;
+    if (singleBadge) { singleBadge.textContent = '● ' + displayChat; singleBadge.className = 'tg-status-tag active'; }
+    if (batchBadge) { batchBadge.textContent = '● ' + displayChat; batchBadge.className = 'tg-status-tag active'; }
     if (modalDot) modalDot.className = 'status-indicator-dot active';
-    if (modalMsg) modalMsg.textContent = `Connected as ${displayBot}`;
+    if (modalMsg) modalMsg.textContent = `Connected to Channel: ${displayChat}`;
+  } else if (serverTgConfig.bot_token_configured || cfg.bot_token) {
+    if (headerBtn) headerBtn.classList.remove('connected');
+    if (headerText) headerText.textContent = 'Enter Channel';
+    if (singleBadge) { singleBadge.textContent = 'Enter Channel ID'; singleBadge.className = 'tg-status-tag'; }
+    if (batchBadge) { batchBadge.textContent = 'Enter Channel ID'; batchBadge.className = 'tg-status-tag'; }
+    if (modalDot) modalDot.className = 'status-indicator-dot';
+    if (modalMsg) modalMsg.textContent = 'Bot Ready — Enter Channel ID to connect';
   } else {
     if (headerBtn) headerBtn.classList.remove('connected');
     if (headerText) headerText.textContent = 'Link Telegram';
     if (singleBadge) { singleBadge.textContent = 'Config Needed'; singleBadge.className = 'tg-status-tag'; }
     if (batchBadge) { batchBadge.textContent = 'Config Needed'; batchBadge.className = 'tg-status-tag'; }
     if (modalDot) modalDot.className = 'status-indicator-dot';
-    if (modalMsg) modalMsg.textContent = 'No Bot Token saved yet';
+    if (modalMsg) modalMsg.textContent = 'Enter Channel / Bot Token';
   }
 }
 
@@ -202,6 +247,7 @@ function openTgModal() {
 
   checkTelegramStatus();
   if (overlay) overlay.classList.remove('hidden');
+  if (chatInp) setTimeout(() => chatInp.focus(), 150);
 }
 
 function closeTgModal(e) {
@@ -222,56 +268,95 @@ function toggleTgOptions(mode) {
   }
 }
 
-async function saveTelegramSettings(e) {
-  e.preventDefault();
-  const botToken = document.getElementById('tgModalBotToken').value.trim();
-  const apiId = document.getElementById('tgModalApiId').value.trim();
-  const apiHash = document.getElementById('tgModalApiHash').value.trim();
-  const defaultChat = document.getElementById('tgModalDefaultChat').value.trim();
-  const btn = document.getElementById('btnSaveTg');
-
-  if (!botToken || !apiId || !apiHash) {
-    showToast('Please fill in Bot Token, API ID, and API Hash', 'error');
+async function quickConnectTgChannel(channelId) {
+  if (!channelId || !channelId.trim()) {
+    showToast('Please enter a Channel or Chat ID (e.g. -100xxxxxxxxxx or @ChannelName)', 'error');
     return;
   }
+  const cleanCid = channelId.trim();
+  const cfg = getTelegramConfig();
+  const testPayload = {
+    chat_id: cleanCid,
+    bot_token: cfg.bot_token || undefined
+  };
 
-  btn.disabled = true;
-  btn.textContent = 'Testing Token...';
-
+  showToast('Connecting to Telegram Channel...', 'info');
   try {
     const res = await fetch('/api/telegram/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot_token: botToken })
+      body: JSON.stringify(testPayload)
     });
     const data = await res.json();
-    if (data.valid) {
-      localStorage.setItem('omni_tg_bot_token', botToken);
-      localStorage.setItem('omni_tg_api_id', apiId);
-      localStorage.setItem('omni_tg_api_hash', apiHash);
-      if (defaultChat) localStorage.setItem('omni_tg_default_chat', defaultChat);
+    if (data.valid !== false && (data.chat_connected !== false || !data.chat_error)) {
+      const finalCid = data.formatted_chat_id || cleanCid;
+      localStorage.setItem('omni_tg_default_chat', finalCid);
       if (data.username) localStorage.setItem('omni_tg_bot_username', data.username);
 
+      const sInp = document.getElementById('singleTgChatId');
+      const bInp = document.getElementById('batchTgChatId');
+      if (sInp) sInp.value = finalCid;
+      if (bInp) bInp.value = finalCid;
+
       checkTelegramStatus();
-      if (data.pyrogram_available === false) {
-        showToast(`Bot @${data.username || 'Bot'} verified, BUT Pyrofork is missing on server! Run: !pip install pyrofork tgcrypto in Colab.`, 'warning');
-      } else {
-        showToast(`Telegram Bot Verified! Connected: @${data.username || data.first_name}`, 'success');
-      }
+      const title = data.chat_title ? ` (${data.chat_title})` : '';
+      showToast(`Telegram Channel Connected: ${finalCid}${title}!`, 'success');
       closeTgModal();
     } else {
-      showToast(`Telegram Error: ${data.error || 'Invalid Bot Token'}`, 'error');
+      const errMsg = data.chat_error || data.error || 'Could not verify channel access';
+      showToast(`Telegram: ${errMsg}`, 'error');
     }
   } catch (err) {
-    showToast('Network error verifying Telegram bot credentials', 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-      Test & Save Credentials
-    `;
+    localStorage.setItem('omni_tg_default_chat', cleanCid);
+    const sInp = document.getElementById('singleTgChatId');
+    const bInp = document.getElementById('batchTgChatId');
+    if (sInp) sInp.value = cleanCid;
+    if (bInp) bInp.value = cleanCid;
+    checkTelegramStatus();
+    showToast(`Channel ID saved: ${cleanCid}`, 'success');
+    closeTgModal();
+  }
+}
+
+async function saveTelegramSettings(e) {
+  if (e) e.preventDefault();
+  const defaultChat = (document.getElementById('tgModalDefaultChat')?.value || '').trim();
+  const customBotToken = (document.getElementById('tgModalBotToken')?.value || '').trim();
+  const customApiId = (document.getElementById('tgModalApiId')?.value || '').trim();
+  const customApiHash = (document.getElementById('tgModalApiHash')?.value || '').trim();
+  const btn = document.getElementById('btnSaveTg');
+
+  if (customBotToken) localStorage.setItem('omni_tg_bot_token', customBotToken);
+  if (customApiId) localStorage.setItem('omni_tg_api_id', customApiId);
+  if (customApiHash) localStorage.setItem('omni_tg_api_hash', customApiHash);
+
+  if (defaultChat) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Connecting...'; }
+    await quickConnectTgChannel(defaultChat);
+    if (btn) { btn.disabled = false; btn.textContent = 'Connect'; }
+  } else if (customBotToken) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Testing Token...'; }
+    try {
+      const res = await fetch('/api/telegram/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_token: customBotToken })
+      });
+      const data = await res.json();
+      if (data.valid) {
+        if (data.username) localStorage.setItem('omni_tg_bot_username', data.username);
+        showToast(`Bot Verified: @${data.username || 'Ready'}! Now enter your Channel ID.`, 'success');
+        checkTelegramStatus();
+      } else {
+        showToast(`Telegram Error: ${data.error || 'Invalid Bot Token'}`, 'error');
+      }
+    } catch (err) {
+      showToast('Network error verifying Telegram bot credentials', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Connect'; }
+    }
+  } else {
+    showToast('Please enter your Channel / Chat ID (e.g. -100xxxxxxxxxx or @ChannelName)', 'error');
   }
 }
 
@@ -331,11 +416,16 @@ async function handleSingleSubmit(e) {
   const ytPrivacy = document.getElementById('singleYtPrivacy')?.value || 'unlisted';
   const tgUpload = document.getElementById('singleTgUpload')?.checked || false;
   const tgChatId = document.getElementById('singleTgChatId')?.value.trim() || '';
+  const customBotToken = document.getElementById('singleTgBotToken')?.value.trim() || '';
+  const customApiId = document.getElementById('singleTgApiId')?.value.trim() || '';
+  const customApiHash = document.getElementById('singleTgApiHash')?.value.trim() || '';
   const tgConfig = getTelegramConfig();
 
-  if (tgUpload && (!tgConfig.bot_token || !tgConfig.api_id || !tgConfig.api_hash)) {
-    showToast('Please configure Telegram Bot Token & API keys first!', 'error');
-    openTgModal();
+  const effectiveChat = tgChatId || tgConfig.default_chat;
+  if (tgUpload && !effectiveChat) {
+    showToast('Please enter your Telegram Channel / Chat ID (e.g. -100xxxxxxxxxx or @ChannelName)', 'error');
+    const targetInp = document.getElementById('singleTgChatId');
+    if (targetInp) targetInp.focus();
     return;
   }
 
@@ -363,10 +453,10 @@ async function handleSingleSubmit(e) {
         privacy_status: ytPrivacy,
         user_id: getUserId(),
         upload_to_telegram: tgUpload,
-        tg_bot_token: tgConfig.bot_token || null,
-        tg_api_id: tgConfig.api_id || null,
-        tg_api_hash: tgConfig.api_hash || null,
-        tg_chat_id: tgChatId || tgConfig.default_chat || null
+        tg_bot_token: customBotToken || tgConfig.bot_token || null,
+        tg_api_id: customApiId || tgConfig.api_id || null,
+        tg_api_hash: customApiHash || tgConfig.api_hash || null,
+        tg_chat_id: effectiveChat || null
       })
     });
 
@@ -396,11 +486,16 @@ async function handleBatchSubmit(e) {
   const ytPrivacy = document.getElementById('batchYtPrivacy')?.value || 'unlisted';
   const tgUpload = document.getElementById('batchTgUpload')?.checked || false;
   const tgChatId = document.getElementById('batchTgChatId')?.value.trim() || '';
+  const customBotToken = document.getElementById('batchTgBotToken')?.value.trim() || '';
+  const customApiId = document.getElementById('batchTgApiId')?.value.trim() || '';
+  const customApiHash = document.getElementById('batchTgApiHash')?.value.trim() || '';
   const tgConfig = getTelegramConfig();
 
-  if (tgUpload && (!tgConfig.bot_token || !tgConfig.api_id || !tgConfig.api_hash)) {
-    showToast('Please configure Telegram Bot Token & API keys first!', 'error');
-    openTgModal();
+  const effectiveBatchChat = tgChatId || tgConfig.default_chat;
+  if (tgUpload && !effectiveBatchChat) {
+    showToast('Please enter your Telegram Channel / Chat ID (e.g. -100xxxxxxxxxx or @ChannelName)', 'error');
+    const targetInp = document.getElementById('batchTgChatId');
+    if (targetInp) targetInp.focus();
     return;
   }
 
@@ -426,10 +521,10 @@ async function handleBatchSubmit(e) {
         default_privacy: ytPrivacy,
         user_id: getUserId(),
         upload_to_telegram: tgUpload,
-        tg_bot_token: tgConfig.bot_token || null,
-        tg_api_id: tgConfig.api_id || null,
-        tg_api_hash: tgConfig.api_hash || null,
-        tg_chat_id: tgChatId || tgConfig.default_chat || null
+        tg_bot_token: customBotToken || tgConfig.bot_token || null,
+        tg_api_id: customApiId || tgConfig.api_id || null,
+        tg_api_hash: customApiHash || tgConfig.api_hash || null,
+        tg_chat_id: effectiveBatchChat || null
       })
     });
 

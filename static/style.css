@@ -1538,6 +1538,95 @@ input:focus, textarea:focus {
   margin: 0;
 }
 
+/* Custom Bot Details Accordion */
+.tg-custom-details {
+  background: rgba(10, 14, 23, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  margin-top: 4px;
+  transition: all var(--transition-fast);
+}
+
+.tg-custom-details[open] {
+  background: rgba(10, 14, 23, 0.85);
+  border-color: rgba(0, 136, 204, 0.3);
+  padding: 8px 12px;
+}
+
+.tg-custom-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.77rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 4px 0;
+}
+
+.tg-custom-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tg-custom-summary:hover {
+  color: #38bdf8;
+}
+
+.tg-summary-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tg-summary-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.tg-custom-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.tg-custom-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tg-custom-field label {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.tg-custom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tg-custom-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
 /* Button to watch on Telegram */
 .btn-tg-watch {
   display: inline-flex;

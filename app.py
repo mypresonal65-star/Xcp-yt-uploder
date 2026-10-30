@@ -50,6 +50,14 @@ COOKIES_FILE = os.environ.get(
     str(BASE_DIR.parent / "Banana_bot--main" / "youtube_cookies.txt")
 )
 
+# =========================================================================
+#  Telegram Default Credentials (Pre-configured directly in code)
+# =========================================================================
+DEFAULT_TG_API_ID = os.environ.get("TG_API_ID", "37748306")
+DEFAULT_TG_API_HASH = os.environ.get("TG_API_HASH", "745b95ee77934f04e84594d23b13c0ef")
+DEFAULT_TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "8880313683:AAH3B1w0rLsjny3y6sI6ENu2Wp9rBpJhUOI")
+DEFAULT_TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
+
 # In-memory Task Store and Queue
 tasks_lock = asyncio.Lock()
 tasks_db: Dict[str, Dict[str, Any]] = {}
@@ -847,14 +855,14 @@ def sync_download_worker(task_id: str):
                     task["speed_str"] = f"TG: {pct}% ({spd_str})"
 
                 tg_title = task.get("display_title") or friendly_name
-                bot_token = task.get("tg_bot_token") or os.environ.get("TG_BOT_TOKEN")
-                api_id = task.get("tg_api_id") or os.environ.get("TG_API_ID")
-                api_hash = task.get("tg_api_hash") or os.environ.get("TG_API_HASH")
-                chat_id = task.get("tg_chat_id") or os.environ.get("TG_CHAT_ID")
+                bot_token = task.get("tg_bot_token") or DEFAULT_TG_BOT_TOKEN
+                api_id = task.get("tg_api_id") or DEFAULT_TG_API_ID
+                api_hash = task.get("tg_api_hash") or DEFAULT_TG_API_HASH
+                chat_id = task.get("tg_chat_id") or DEFAULT_TG_CHAT_ID
 
                 if TELEGRAM_UPLOADER_AVAILABLE and bot_token and api_id and api_hash and chat_id:
                     try:
-                        caption_text = f"🎬 **{tg_title}**\n\n🔗 Source: {original_url}"
+                        caption_text = f"🎬 **{tg_title}**"
                         tg_res = asyncio.run(upload_video_to_telegram(
                             file_path=str(final_file),
                             caption=caption_text,
@@ -958,10 +966,10 @@ def create_task_entry(
         "youtube_url": None,
         "youtube_status": None,
         "upload_to_telegram": upload_to_telegram,
-        "tg_bot_token": tg_bot_token,
-        "tg_api_id": tg_api_id,
-        "tg_api_hash": tg_api_hash,
-        "tg_chat_id": tg_chat_id,
+        "tg_bot_token": tg_bot_token or DEFAULT_TG_BOT_TOKEN,
+        "tg_api_id": tg_api_id or DEFAULT_TG_API_ID,
+        "tg_api_hash": tg_api_hash or DEFAULT_TG_API_HASH,
+        "tg_chat_id": tg_chat_id or DEFAULT_TG_CHAT_ID,
         "telegram_url": None,
         "telegram_status": None,
         "telegram_message_id": None,
@@ -1045,14 +1053,14 @@ def background_tg_upload(task_id: str):
         task["speed_str"] = f"TG: {pct}% ({spd_str})"
 
     tg_title = task.get("display_title") or task.get("friendly_filename") or "Uploaded Video"
-    bot_token = task.get("tg_bot_token") or os.environ.get("TG_BOT_TOKEN")
-    api_id = task.get("tg_api_id") or os.environ.get("TG_API_ID")
-    api_hash = task.get("tg_api_hash") or os.environ.get("TG_API_HASH")
-    chat_id = task.get("tg_chat_id") or os.environ.get("TG_CHAT_ID")
+    bot_token = task.get("tg_bot_token") or DEFAULT_TG_BOT_TOKEN
+    api_id = task.get("tg_api_id") or DEFAULT_TG_API_ID
+    api_hash = task.get("tg_api_hash") or DEFAULT_TG_API_HASH
+    chat_id = task.get("tg_chat_id") or DEFAULT_TG_CHAT_ID
 
     if TELEGRAM_UPLOADER_AVAILABLE and bot_token and api_id and api_hash and chat_id:
         try:
-            caption_text = f"🎬 **{tg_title}**\n\n🔗 Source: {task.get('url', '')}"
+            caption_text = f"🎬 **{tg_title}**"
             tg_res = asyncio.run(upload_video_to_telegram(
                 file_path=file_path,
                 caption=caption_text,
@@ -1175,11 +1183,70 @@ async def manual_youtube_upload(task_id: str, background_tasks: BackgroundTasks)
     return {"success": True, "message": "YouTube upload started"}
 
 
+@app.get("/api/telegram/config")
+async def get_telegram_config():
+    """Returns Telegram configuration status so client only needs to provide Channel ID."""
+    return {
+        "api_id_configured": bool(DEFAULT_TG_API_ID),
+        "api_hash_configured": bool(DEFAULT_TG_API_HASH),
+        "bot_token_configured": bool(DEFAULT_TG_BOT_TOKEN),
+        "default_api_id": DEFAULT_TG_API_ID,
+        "default_api_hash": DEFAULT_TG_API_HASH,
+        "default_bot_token": DEFAULT_TG_BOT_TOKEN,
+        "default_chat_id": DEFAULT_TG_CHAT_ID,
+        "pyrogram_available": TELEGRAM_UPLOADER_AVAILABLE,
+        "import_error": TG_IMPORT_ERROR
+    }
+
+
 @app.post("/api/telegram/test")
 async def test_telegram_creds(payload: dict):
-    bot_token = payload.get("bot_token", "")
+    bot_token = (payload.get("bot_token") or "").strip() or DEFAULT_TG_BOT_TOKEN
+    chat_id = (payload.get("chat_id") or "").strip()
+
+    if not bot_token:
+        return {
+            "valid": False, 
+            "error": "Bot token not configured on server and not provided in request.",
+            "bot_username": None,
+            "pyrogram_available": TELEGRAM_UPLOADER_AVAILABLE
+        }
+
     res = validate_telegram_credentials(bot_token)
     res["pyrogram_available"] = TELEGRAM_UPLOADER_AVAILABLE
+
+    # If chat_id is provided, verify whether bot can access the channel/chat
+    if res.get("valid") and chat_id:
+        try:
+            check_cid = chat_id if chat_id.startswith(("-100", "@")) else f"-100{chat_id}" if chat_id.lstrip("-").isdigit() else chat_id
+            test_res = requests.get(
+                f"https://api.telegram.org/bot{bot_token}/getChat",
+                params={"chat_id": check_cid},
+                timeout=5
+            ).json()
+            if test_res.get("ok"):
+                chat_info = test_res.get("result", {})
+                res["chat_connected"] = True
+                res["chat_title"] = chat_info.get("title") or chat_info.get("username") or str(chat_id)
+                res["formatted_chat_id"] = str(chat_info.get("id", check_cid))
+            else:
+                orig_res = requests.get(
+                    f"https://api.telegram.org/bot{bot_token}/getChat",
+                    params={"chat_id": chat_id},
+                    timeout=5
+                ).json()
+                if orig_res.get("ok"):
+                    chat_info = orig_res.get("result", {})
+                    res["chat_connected"] = True
+                    res["chat_title"] = chat_info.get("title") or chat_info.get("username") or str(chat_id)
+                    res["formatted_chat_id"] = str(chat_info.get("id", chat_id))
+                else:
+                    res["chat_connected"] = False
+                    res["chat_error"] = test_res.get("description", "Bot could not find channel. Ensure Bot is added as Administrator with Post permission.")
+        except Exception as e:
+            res["chat_connected"] = False
+            res["chat_error"] = f"Could not verify channel access: {e}"
+
     if not TELEGRAM_UPLOADER_AVAILABLE:
         res["warning"] = f"Bot token is valid, but Pyrofork MTProto library is not installed: {TG_IMPORT_ERROR or 'run: pip install pyrofork tgcrypto'}"
     return res

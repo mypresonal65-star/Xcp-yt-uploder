@@ -726,8 +726,9 @@ def sync_download_worker(task_id: str):
         'noplaylist': True,
         'nocheckcertificate': True,
         'allow_unplayable_formats': True,
-        'concurrent_fragment_downloads': 16,  # 🚀 16 concurrent fragments for stable 5-8 MB/s
-        'buffersize': 16 * 1024 * 1024,       # 16MB buffer
+        'concurrent_fragment_downloads': 32,  # 🚀 Boosted to 32 parallel fragments for 20-30 MB/s
+        'buffersize': 32 * 1024 * 1024,       # 32MB high-speed buffer
+        'http_chunk_size': 10 * 1024 * 1024,  # 10MB chunk pipeline
         'socket_timeout': 20,
         'http_headers': browser_headers,       # Full browser identity for every chunk
     }
@@ -739,7 +740,7 @@ def sync_download_worker(task_id: str):
         task.get("media_type") == "ClassX Stream"
     )
     if is_classx_stream:
-        ydl_opts['concurrent_fragment_downloads'] = 16
+        ydl_opts['concurrent_fragment_downloads'] = 32
         ydl_opts['buffersize'] = 32 * 1024 * 1024
         ydl_opts['http_chunk_size'] = 10 * 1024 * 1024
         tok_m = re.search(r'[?&](edge-cache-token=[^&]+)', target_url)
